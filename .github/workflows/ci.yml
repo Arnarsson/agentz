@@ -71,29 +71,33 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
+    - name: Set up Python
+      uses: actions/setup-python@v4
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
-        
-    - name: Backup to S3
+        python-version: '3.12'
+    
+    - name: Install dependencies
       run: |
-        timestamp=$(date +%Y%m%d_%H%M%S)
-        tar -czf backup_${timestamp}.tar.gz \
-          --exclude='.git' \
-          --exclude='node_modules' \
-          --exclude='__pycache__' \
-          --exclude='.env' \
-          .
-        aws s3 cp backup_${timestamp}.tar.gz s3://${{ secrets.BACKUP_S3_BUCKET }}/
-        
-    - name: Cleanup old backups
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Create backup directory
+      run: mkdir -p backups
+    
+    - name: Run backup script
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crewai
+        BACKUP_PATH: ./backups
+        BACKUP_COMPRESS: true
+        BACKUP_RETENTION_DAYS: 30
       run: |
-        aws s3 ls s3://${{ secrets.BACKUP_S3_BUCKET }}/ | \
-        sort -r | \
-        tail -n +31 | \
-        while read -r line; do
-          aws s3 rm "s3://${{ secrets.BACKUP_S3_BUCKET }}/${line##* }"
-        done 
+        cd backend
+        python scripts/backup_local.py
+    
+    - name: Archive backup files
+      uses: actions/upload-artifact@v3
+      with:
+        name: database-backup
+        path: backups/
+        retention-days: 30 

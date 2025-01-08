@@ -1,7 +1,16 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import List, Optional, Any
 from crewai import Task
+from sqlalchemy.orm import Session
+from app.core.database import get_db
+from app.schemas.task import (
+    TaskHistoryResponse,
+    TaskAnalytics,
+    TimeRange
+)
+from app.services.task_history import TaskHistoryService
+from app.core.errors import AgentError
 
 router = APIRouter()
 
@@ -55,4 +64,74 @@ async def list_tasks():
 async def execute_task(task_id: str):
     """Execute a specific task (to be implemented)."""
     # TODO: Implement task execution
-    raise HTTPException(status_code=501, detail="Not implemented yet") 
+    raise HTTPException(status_code=501, detail="Not implemented yet")
+
+@router.get("/{task_id}", response_model=TaskHistoryResponse)
+async def get_task_history(
+    task_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get task history by ID."""
+    try:
+        task = await TaskHistoryService.get_task_history(db, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task history not found")
+        return task
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/agent/{agent_id}", response_model=List[TaskHistoryResponse])
+async def list_agent_tasks(
+    agent_id: str,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    db: Session = Depends(get_db)
+):
+    """List task history for an agent."""
+    try:
+        time_range = TimeRange(start_time=start_time, end_time=end_time)
+        tasks = await TaskHistoryService.list_agent_tasks(
+            db,
+            agent_id,
+            time_range=time_range,
+            skip=skip,
+            limit=limit
+        )
+        return tasks
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/agent/{agent_id}/analytics", response_model=TaskAnalytics)
+async def get_agent_analytics(
+    agent_id: str,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get analytics for an agent's tasks."""
+    try:
+        time_range = TimeRange(start_time=start_time, end_time=end_time)
+        analytics = await TaskHistoryService.get_agent_analytics(
+            db,
+            agent_id,
+            time_range=time_range
+        )
+        return analytics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/agent/{agent_id}/analytics/refresh")
+async def refresh_agent_analytics(
+    agent_id: str,
+    db: Session = Depends(get_db)
+):
+    """Refresh analytics summary for an agent."""
+    try:
+        await TaskHistoryService.update_agent_analytics_summary(db, agent_id)
+        return {"message": "Analytics summary updated successfully"}
+    except AgentError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) 
