@@ -9,6 +9,7 @@ from app.core.logging import log_agent_action
 from app.core.websocket import ws_manager
 from pydantic import BaseModel
 import uuid
+import json
 
 router = APIRouter()
 
@@ -180,34 +181,34 @@ async def execute_task(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.websocket("/{agent_id}/ws")
-async def agent_websocket(
-    websocket: WebSocket,
-    agent_id: str,
-    db: Session = Depends(get_db)
-):
+async def agent_websocket(websocket: WebSocket, agent_id: str):
     """WebSocket endpoint for real-time agent updates."""
     try:
         # Verify agent exists
-        await AgentService.get_agent(db, agent_id)
-        
-        # Accept connection
+        agent = await AgentService.get_agent(agent_id)
+        if not agent:
+            await websocket.close(code=4004, reason="Agent not found")
+            return
+
         await ws_manager.connect(websocket, agent_id)
         
         try:
             while True:
-                # Keep connection alive and handle client messages
-                data = await websocket.receive_json()
-                
-                # Handle client messages if needed
-                if data.get("type") == "ping":
-                    await websocket.send_json({"type": "pong"})
-                    
+                # Handle incoming messages (e.g., pong responses)
+                data = await websocket.receive_text()
+                try:
+                    message = json.loads(data)
+                    if message.get("type") == "pong":
+                        continue  # Heartbeat response received
+                except json.JSONDecodeError:
+                    continue
         except WebSocketDisconnect:
             await ws_manager.disconnect(websocket)
             
-    except AgentNotFoundError as e:
-        # Reject connection if agent doesn't exist
-        await websocket.close(code=4004, reason=str(e))
     except Exception as e:
-        # Handle other errors
-        await websocket.close(code=4000, reason=str(e)) 
+        await websocket.close(code=4000, reason=str(e))
+
+@router.get("/ws/stats")
+async def get_websocket_stats() -> Dict[str, int]:
+    """Get current WebSocket connection statistics."""
+    return ws_manager.get_stats() 

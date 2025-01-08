@@ -1,5 +1,5 @@
 from loguru import logger
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 def setup_logging():
@@ -38,3 +38,7 @@ def log_agent_action(
         logger.error(log_data)
     else:
         logger.info(log_data) 
+
+def log_websocket_action(message: str, level: str = "info", **kwargs):
+    """Log WebSocket-related actions with structured data."""
+    logger.opt(depth=1).log(level.upper(), f"WebSocket: {message}", **kwargs) 
