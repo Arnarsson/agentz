@@ -1,8 +1,8 @@
-# CrewAI Web: Product Requirements Document (PRD)
+# AGENTZ: Product Requirements Document (PRD)
 
 ## 1. Project Overview
 
-CrewAI Web is designed to provide a user interface for the CrewAI framework, enabling users to create, manage, and monitor AI agents and workflows. The primary goal is to offer a seamless experience for agent-based task execution and workflow orchestration.
+AGENTZ is designed to provide a user interface for the CrewAI framework, enabling users to create, manage, and monitor AI agents and workflows. The primary goal is to offer a seamless experience for agent-based task execution and workflow orchestration.
 
 ### High-Level Objectives
 - **Agent Management**: Create and configure AI agents through an intuitive interface
@@ -19,204 +19,196 @@ CrewAI Web is designed to provide a user interface for the CrewAI framework, ena
 - Configure agent properties (role, goal, backstory)
 - Monitor agent status and memory state
 - Enable/disable agent delegation capabilities
+- Real-time agent state updates
+- Agent performance metrics
 
 ### Task Management
 - Create and assign tasks to agents
 - Define task parameters and expected outputs
 - Track task execution status
 - Handle task dependencies and chaining
+- Task retry mechanisms with exponential backoff
+- Task history and analytics
 
 ### Workflow Orchestration
 - Design multi-agent workflows
 - Configure workflow execution strategies
 - Monitor workflow progress
 - Handle workflow errors and recovery
+- Workflow templates and versioning
+- Workflow analytics and optimization
 
 ### Real-time Updates
 - WebSocket integration for live updates
 - Progress indicators for long-running tasks
 - Real-time agent status updates
 - Event notifications for task completion
+- System health monitoring
+- Performance metrics streaming
 
 ### Authentication & Security
-- User authentication via Supabase
+- User authentication via Clerk
 - Role-based access control
 - Secure API key management
 - Request rate limiting
+- Audit logging
+- Security headers and CORS
 
 ## 3. Tech Stack
 
-### Frontend
-- Next.js for the web application
-- Tailwind CSS for styling
-- Shadcn UI components
-- TypeScript for type safety
-
-### Backend
-- FastAPI for the REST API
-- SQLAlchemy for database operations
+### Backend (FastAPI)
+- Python 3.12+ for compatibility
+- FastAPI for REST API
+- SQLAlchemy for ORM
 - CrewAI for agent management
 - WebSockets for real-time updates
+- Pydantic for data validation
+- Loguru for logging
 
-### Database & Auth
-- Supabase for data storage
-- PostgreSQL for relational data
-- Redis for caching (optional)
+### Database & Storage
+- Supabase for primary database
+- Redis for caching and queues
+- ChromaDB for embeddings
+- S3 for file storage
 
-### Testing
-- Pytest for backend unit tests
+### Testing & Quality
+- Pytest for unit tests
 - Pytest-asyncio for async tests
-- Pytest-cov for coverage reporting
+- Pytest-cov for coverage
 - Playwright for E2E testing
+- Black for code formatting
+- Ruff for linting
 
-## 4. Architecture & File Structure
+## 4. Development Guidelines
 
-```
-crewai-web/
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── agents.py
-│   │   │   ├── tasks.py
-│   │   │   └── workflows.py
-│   │   ├── core/
-│   │   │   ├── config.py
-│   │   │   └── database.py
-│   │   ├── models/
-│   │   │   └── agent.py
-│   │   ├── schemas/
-│   │   │   └── agent.py
-│   │   └── services/
-│   │       └── agent.py
-│   └── tests/
-│       ├── conftest.py
-│       ├── test_api/
-│       │   └── test_agents.py
-│       └── test_services/
-│           └── test_agent_service.py
-└── frontend/
-    ├── app/
-    │   └── page.tsx
-    ├── components/
-    │   └── ui/
-    └── lib/
-        └── api/
-```
+### Environment Setup
+- Use virtual environments
+- Install dependencies via pip
+- Configure environment variables
+- Set up pre-commit hooks
+- Configure IDE settings
 
-## 5. Testing Strategy
+### Code Organization
+- Follow modular architecture
+- Use dependency injection
+- Implement service layer pattern
+- Separate business logic
+- Maintain clean interfaces
 
-### Backend Testing
-- **Unit Tests**: Test individual components (services, models)
-- **Integration Tests**: Test API endpoints and database operations
-- **Async Tests**: Test asynchronous operations
-- **Coverage Reports**: Maintain high test coverage
+### Testing Requirements
+- Maintain 80%+ test coverage
+- Write unit tests for all services
+- Include integration tests
+- Implement E2E test scenarios
+- Test error handling
 
-### Frontend Testing
-- **Component Tests**: Test UI components
-- **Integration Tests**: Test API interactions
-- **E2E Tests**: Test complete user workflows
+### Documentation
+- Maintain API documentation
+- Document code with docstrings
+- Keep README files updated
+- Include setup instructions
+- Provide troubleshooting guides
 
-### Test Organization
-- Group tests by feature/component
-- Use fixtures for common test data
-- Mock external services when appropriate
+## 5. Deployment & Operations
 
-## 6. Version Control & Deployment
+### Infrastructure
+- Docker containerization
+- Kubernetes orchestration
+- Load balancing
+- Auto-scaling
+- Health monitoring
 
-### Git Workflow
-- **Main Branch**: Production-ready code
-- **Develop Branch**: Integration branch for features
-- **Feature Branches**: Individual feature development
-- **Release Branches**: Version preparation
-- **Hotfix Branches**: Emergency fixes
+### Monitoring & Logging
+- Structured logging
+- Error tracking
+- Performance monitoring
+- Resource utilization
+- User analytics
 
-### Branch Naming
-- feature/<feature-name>
-- bugfix/<bug-description>
-- release/v<version>
-- hotfix/<issue-description>
+### Backup & Recovery
+- Database backups
+- Point-in-time recovery
+- Configuration backups
+- Disaster recovery plan
+- Data retention policy
 
-### Commit Guidelines
-- Clear, descriptive commit messages
-- Reference issue numbers when applicable
-- Keep commits focused and atomic
+## 6. Security Requirements
 
-### Pull Requests
-- Detailed PR descriptions
-- Required code reviews
-- Passing tests and linting
-- No merge conflicts
+### Authentication
+- JWT token validation
+- API key management
+- Role-based access
+- Session management
+- Rate limiting
 
-## 7. Backup & Recovery
-
-### Code Backup
-- Regular GitHub repository backups
-- Tagged releases for versioning
-- Mirror repositories for redundancy
-
-### Database Backup
-- Daily automated backups
-- Point-in-time recovery capability
-- Secure backup storage
-- Regular backup testing
-
-### Environment Management
-- Separate .env files per environment
-- Secure secrets management
-- Regular key rotation
-- Backup of configuration
-
-## 8. Development Guidelines
-
-### Code Style
-- Follow PEP 8 for Python code
-- Use TypeScript for frontend code
-- Document all public APIs
-- Write clear comments
-
-### Error Handling
-- Consistent error responses
-- Detailed error logging
-- User-friendly error messages
-- Error recovery mechanisms
-
-### Performance
-- Optimize database queries
-- Cache frequently accessed data
-- Minimize API calls
-- Use async operations
-
-### Security
+### Data Protection
+- Encryption at rest
+- Secure communication
 - Input validation
 - Output sanitization
-- Rate limiting
-- Security headers
+- Audit logging
 
-## 9. Monitoring & Logging
+## 7. Performance Requirements
 
-### Application Monitoring
-- Performance metrics
-- Error tracking
-- User activity logs
-- System health checks
+### Response Times
+- API endpoints < 200ms
+- WebSocket latency < 50ms
+- Database queries < 100ms
+- Task initialization < 500ms
+- Real-time updates < 100ms
 
-### Log Management
-- Structured logging
-- Log levels (DEBUG, INFO, ERROR)
+### Scalability
+- Support 1000+ concurrent users
+- Handle 100+ agents per user
+- Process 1000+ tasks per minute
+- Maintain 99.9% uptime
+- Efficient resource usage
+
+## 8. Quality Assurance
+
+### Code Quality
+- Follow PEP 8 guidelines
+- Use type hints
+- Document public APIs
+- Maintain test coverage
+- Regular code reviews
+
+### Testing Strategy
+- Unit testing
+- Integration testing
+- E2E testing
+- Performance testing
+- Security testing
+
+## 9. Development Process
+
+### Version Control
+- Git-based workflow
+- Feature branching
+- Pull request reviews
+- Version tagging
+- Changelog maintenance
+
+### CI/CD Pipeline
+- Automated testing
+- Code quality checks
+- Security scanning
+- Automated deployment
+- Environment promotion
+
+## 10. Maintenance & Support
+
+### System Maintenance
+- Regular updates
+- Security patches
+- Performance optimization
+- Database maintenance
 - Log rotation
-- Log analysis tools
 
-## 10. Documentation
-
-### API Documentation
-- OpenAPI/Swagger documentation
-- API endpoint descriptions
-- Request/response examples
-- Error codes and handling
-
-### Code Documentation
-- Inline code comments
-- Function/method documentation
-- Architecture diagrams
-- Setup instructions
+### Support Process
+- Issue tracking
+- Bug reporting
+- Feature requests
+- Documentation updates
+- User support
 
