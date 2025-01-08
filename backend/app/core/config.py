@@ -1,27 +1,35 @@
-from pydantic_settings import BaseSettings
-from functools import lru_cache
+"""
+Core configuration settings for the application.
+"""
+from typing import Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings."""
-    
+    # Application
+    APP_NAME: str = "AgentZ"
+    DEBUG: bool = False
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "CrewAI Web"
     
-    # CORS Configuration
-    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    # Authentication
+    CLERK_SECRET_KEY: str
+    CLERK_JWT_VERIFICATION_KEY: str
     
-    # OpenAI Configuration (for CrewAI)
-    OPENAI_API_KEY: str = ""
+    # Database
+    SUPABASE_URL: str
+    SUPABASE_KEY: str
+    SUPABASE_JWT_SECRET: str
     
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
+    # AI/ML
+    OPENAI_API_KEY: Optional[str] = None
+    
+    # Task Queue
+    REDIS_URL: str = "redis://localhost:6379/0"
+    
+    # Logging
+    LOG_LEVEL: str = "INFO"
+    
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
 
-@lru_cache()
-def get_settings() -> Settings:
-    """Get cached settings instance."""
-    return Settings()
-
-settings = get_settings() 
+settings = Settings() 

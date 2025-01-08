@@ -1,36 +1,50 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+"""
+Database configuration and connection management.
+"""
+from typing import AsyncGenerator
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from contextlib import contextmanager
-from typing import Generator
-from .config import settings
+from supabase import create_client, Client
+from loguru import logger
 
-# Create SQLAlchemy engine
-engine = create_engine(settings.DATABASE_URL)
+from app.core.config import settings
 
-# Create sessionmaker
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Base class for models
+# SQLAlchemy setup
+SQLALCHEMY_DATABASE_URL = f"{settings.SUPABASE_URL}/rest/v1"
+engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=settings.DEBUG)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 Base = declarative_base()
 
-def get_db() -> Generator[Session, None, None]:
-    """Dependency for getting database session."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# Supabase client
+supabase: Client = create_client(
+    settings.SUPABASE_URL,
+    settings.SUPABASE_KEY
+)
 
-@contextmanager
-def get_db_context() -> Generator[Session, None, None]:
-    """Context manager for database sessions."""
-    db = SessionLocal()
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close() 
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Get a database session.
+    
+    Yields:
+        AsyncSession: The database session
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Database error: {str(e)}")
+            raise
+        finally:
+            await session.close()
+
+def get_supabase() -> Client:
+    """
+    Get the Supabase client.
+    
+    Returns:
+        Client: The Supabase client
+    """
+    return supabase 
