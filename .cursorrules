@@ -1,0 +1,94 @@
+You are an expert in Python, FastAPI, agent development, and automated testing.
+
+Key Principles:
+- Write concise, technical responses with accurate Python examples.
+- Use functional, declarative programming for agent logic; avoid excessive state or complex inheritance.
+- Agents should follow modular principles, allowing easy extension and reuse of components.
+- Use descriptive variable and function names (e.g., process_task, is_ready, has_data).
+- Use lowercase with underscores for directories and files (e.g., agents/task_agent.py).
+- Favor named exports for agent functions and modules.
+- Implement a Receive an Object, Return an Object (RORO) pattern to simplify agent input/output.
+
+Agent-Specific Development:
+- Design agents to perform single, focused tasks effectively.
+- Use event-driven patterns to manage agent workflows and communication.
+- Log all agent actions with clear and structured messages for debugging.
+- Use `async` and `await` where necessary for agents requiring concurrent operations.
+- Incorporate timeouts and retries for external API calls or tasks prone to failure.
+- Separate agent logic into:
+  - Core functionality (e.g., task execution, decision-making).
+  - Input/output handlers (e.g., message parsing, API integration).
+  - Error handling and recovery mechanisms.
+
+Python/FastAPI:
+- Use `async def` for all asynchronous operations, including agent workflows.
+- Use type hints for all function signatures, especially for agent inputs and outputs.
+- Prefer Pydantic models for validating agent data (e.g., request and response schemas).
+- Separate request and response models to ensure clean data contracts.
+- File structure: separate agents, utilities, schemas, and API endpoints into distinct directories.
+
+FastAPI for Agent APIs:
+- Use FastAPI to expose agent actions via APIs.
+- Modularize routers for agent-related endpoints (e.g., `/agents/task`).
+- Use FastAPI's dependency injection for shared components (e.g., database connections, cache).
+- Document APIs with detailed OpenAPI specs, including example inputs and outputs.
+
+Package Installation:
+- Use Python 3.12 for maximum compatibility with CrewAI dependencies.
+- Install the following core packages:
+  - `pip install fastapi uvicorn pydantic`
+  - `pip install sqlalchemy chromadb` (for database and embeddings)
+  - `pip install celery redis` (for task management)
+  - `pip install onnxruntime replicate` (for AI model execution)
+  - `pip install pulsar-client` (for messaging and event streaming)
+- For automated UI testing:
+  - `pip install playwright`
+  - `playwright install`
+- Optional:
+  - `pip install loguru` (for advanced logging)
+  - `pip install embedchain chromadb<0.5.0` (resolve version conflicts for embeddings)
+
+Testing:
+- Write unit tests for all agent logic and decision-making algorithms.
+- Write integration tests for interactions between agents, APIs, and external services.
+- Avoid manual user testing; incorporate Playwright for automated UI and bug testing:
+  - Simulate agent interactions through the UI or APIs.
+  - Verify workflows and responses for all supported use cases.
+  - Validate UI consistency, responsiveness, and dynamic agent behavior.
+- Use mocks and stubs for external dependencies during tests to isolate agent behavior.
+
+Error Handling:
+- Implement centralized error handling for agents to log and recover from failures.
+- Use structured logs for agent actions and errors, including timestamps and error categories.
+- Implement global exception handlers for FastAPI endpoints serving agents.
+- Include fallback mechanisms for agents in case of failure (e.g., retries, alerts).
+
+Documentation:
+- Use OpenAPI to auto-generate API documentation for agent-related endpoints.
+- Provide example workflows for each agent in API documentation.
+- Document internal agent logic with comments and diagrams for onboarding new developers.
+
+Project Organization:
+- Use lowercase, underscore-separated file and directory names (e.g., task_agent.py).
+- Maintain a scalable project structure:
+  - `agents/`: Core agent logic and task execution.
+  - `schemas/`: Pydantic models for data validation.
+  - `services/`: Utility functions or shared business logic for agents.
+  - `routers/`: API endpoints for agent interactions.
+  - `tests/`: Unit, integration, and Playwright tests for agents and UI.
+
+Playwright Testing for Agents:
+- Automate testing for UI interactions and workflows involving agents.
+- Simulate edge cases like invalid inputs, timeouts, and system overloads.
+- Validate agent-driven actions through UI workflows (e.g., status updates, task completion).
+- Ensure all agent APIs and UIs are bug-free and follow expected behavior under load.
+
+Other Guidelines:
+- Use environment variables for agent-specific configurations (e.g., API keys, timeouts).
+- Minimize hardcoding in agent logic; use configuration files or centralized settings.
+- Automate repetitive tasks in development and testing to reduce manual intervention.
+- Focus on scalability and maintainability in agent workflows, APIs, and UIs.
+- Use `async def` for all asynchronous operations, including agent workflows.
+- Use type hints for all function signatures.
+- Prefer Pydantic models over raw dictionaries for input validation.
+- File structure: exported router, sub-routes, utilities, static content, types (models, schemas).
