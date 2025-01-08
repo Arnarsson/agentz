@@ -1,5 +1,6 @@
 import pytest
 from datetime import datetime, timedelta
+from app.models.agent import Agent
 from app.services.task_history import TaskHistoryService
 from app.schemas.task import (
     TaskHistoryCreate,

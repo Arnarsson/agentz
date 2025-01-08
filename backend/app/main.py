@@ -1,31 +1,52 @@
+"""
+Main FastAPI application module.
+"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.core.config import settings
+from loguru import logger
 
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json"
+from app.core.config import settings
+from app.routers.agents import router as agents_router
+from app.routers.auth import router as auth_router
+from app.routers.health import router as health_router
+
+# Configure logging
+logger.add(
+    "logs/agentz.log",
+    rotation="500 MB",
+    retention="10 days",
+    level=settings.LOG_LEVEL
 )
 
-# Set up CORS middleware
+app = FastAPI(
+    title=settings.APP_NAME,
+    openapi_url=f"{settings.API_V1_STR}/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origins=["*"],  # Configured based on environment in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+# Include routers
+app.include_router(auth_router, prefix=settings.API_V1_STR)
+app.include_router(agents_router, prefix=settings.API_V1_STR)
+app.include_router(health_router, prefix=settings.API_V1_STR)
 
-# Import and include API routers
-from app.api.agents import router as agents_router
-from app.api.tasks import router as tasks_router
-from app.api.workflows import router as workflows_router
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    logger.info(f"Starting {settings.APP_NAME}")
+    # Initialize any required services here
 
-app.include_router(agents_router, prefix=f"{settings.API_V1_STR}/agents", tags=["agents"])
-app.include_router(tasks_router, prefix=f"{settings.API_V1_STR}/tasks", tags=["tasks"])
-app.include_router(workflows_router, prefix=f"{settings.API_V1_STR}/workflows", tags=["workflows"]) 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown."""
+    logger.info(f"Shutting down {settings.APP_NAME}")
+    # Cleanup any resources here 
