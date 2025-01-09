@@ -1,62 +1,86 @@
-from pydantic import Field
-from typing import Optional, Dict, Any, List
+"""Task schema module."""
+from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, Field
 from datetime import datetime
-from .base import BaseSchema
+from .retry import RetryConfig
 
-class TaskMetrics(BaseSchema):
-    """Schema for task execution metrics."""
-    execution_time: Optional[float] = Field(None, description="Task execution time in seconds")
-    tokens_used: Optional[int] = Field(None, description="Number of tokens used")
-    iterations: Optional[int] = Field(None, description="Number of iterations performed")
-    memory_usage: Optional[Dict[str, Any]] = Field(None, description="Memory state changes")
+class TaskMetrics(BaseModel):
+    """Task metrics schema."""
+    execution_time: Optional[float] = None
+    retry_count: int = 0
+    tokens_used: Optional[int] = None
+    memory_usage: Optional[float] = None
+    success_rate: Optional[float] = None
+    tool_usage: Dict[str, int] = Field(default_factory=dict)
 
-class TaskHistoryBase(BaseSchema):
-    """Base schema for task history."""
-    task: str = Field(..., description="Task description or prompt")
-    context: Optional[Dict[str, Any]] = Field(None, description="Task execution context")
-    tools_used: Optional[List[Dict[str, Any]]] = Field(None, description="Tools used during execution")
-    result: Optional[Dict[str, Any]] = Field(None, description="Task execution result")
-    error: Optional[Dict[str, Any]] = Field(None, description="Error details if task failed")
-    metrics: Optional[TaskMetrics] = Field(None, description="Task execution metrics")
+class TaskBase(BaseModel):
+    """Base schema for task."""
+    title: str = Field(..., description="The title of the task")
+    description: str = Field(..., description="The description of the task")
+    priority: int = Field(default=1, description="Task priority (higher number = higher priority)")
+    requires_delegation: bool = Field(default=False, description="Whether the task requires delegation")
+    tools: List[Dict[str, Any]] = Field(default_factory=list, description="The tools required for the task")
+    context: Dict[str, Any] = Field(default_factory=dict, description="The context for the task")
+    execution_params: Dict[str, Any] = Field(default_factory=dict, description="Parameters for task execution")
 
-class TaskHistoryCreate(TaskHistoryBase):
-    """Schema for creating task history."""
-    agent_id: str = Field(..., description="ID of the agent that executed the task")
+class TaskCreate(TaskBase):
+    """Schema for creating a task."""
+    agent_id: str = Field(..., description="The ID of the agent assigned to the task")
+    retry_config: Optional[RetryConfig] = None
 
-class TaskHistoryUpdate(TaskHistoryBase):
-    """Schema for updating task history."""
-    status: Optional[str] = Field(None, description="Task status")
-    completed_at: Optional[str] = Field(None, description="Completion timestamp")
+class TaskUpdate(BaseModel):
+    """Schema for updating a task."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[Dict[str, Any]] = None
+    tools: Optional[List[Dict[str, Any]]] = None
+    context: Optional[Dict[str, Any]] = None
+    agent_id: Optional[str] = None
+    priority: Optional[int] = None
+    requires_delegation: Optional[bool] = None
+    execution_params: Optional[Dict[str, Any]] = None
+    retry_config: Optional[RetryConfig] = None
+    metrics: Optional[TaskMetrics] = None
 
-class TaskHistoryResponse(TaskHistoryBase):
-    """Schema for task history response."""
-    id: str = Field(..., description="Task history ID")
-    agent_id: str = Field(..., description="Agent ID")
-    status: str = Field(..., description="Task status")
-    created_at: str = Field(..., description="Creation timestamp")
-    updated_at: str = Field(..., description="Last update timestamp")
-    completed_at: Optional[str] = Field(None, description="Completion timestamp")
+class TaskResponse(TaskBase):
+    """Schema for task response."""
+    id: str
+    status: str = Field(..., description="Task status (pending, executing, completed, failed, cancelled, retry_scheduled)")
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[Dict[str, Any]] = None
+    agent_id: str
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    execution_time: Optional[float] = None
+    retry_count: int = 0
+    retry_config: Optional[RetryConfig] = None
+    metrics: TaskMetrics = Field(default_factory=TaskMetrics)
+    created_at: datetime
+    updated_at: datetime
 
-class TaskAnalytics(BaseSchema):
+    class Config:
+        """Pydantic config."""
+        from_attributes = True
+
+class TaskHistory(BaseModel):
+    """Schema for task history."""
+    task_id: str
+    status: str
+    agent_id: str
+    timestamp: datetime
+    details: Dict[str, Any] = Field(default_factory=dict)
+    metrics: Optional[TaskMetrics] = None
+
+class TaskAnalytics(BaseModel):
     """Schema for task analytics."""
-    total_tasks: int = Field(..., description="Total number of tasks")
-    completed_tasks: int = Field(..., description="Number of completed tasks")
-    failed_tasks: int = Field(..., description="Number of failed tasks")
-    average_execution_time: Optional[float] = Field(None, description="Average execution time")
-    total_tokens_used: Optional[int] = Field(None, description="Total tokens used")
-    success_rate: float = Field(..., description="Task success rate")
-    common_errors: Optional[List[Dict[str, Any]]] = Field(None, description="Most common errors")
-    tools_usage: Optional[Dict[str, int]] = Field(None, description="Tool usage statistics")
-
-class TimeRange(BaseSchema):
-    """Schema for time range queries."""
-    start_time: Optional[str] = Field(None, description="Start time (ISO format)")
-    end_time: Optional[str] = Field(None, description="End time (ISO format)")
-
-    def get_start_time(self) -> Optional[datetime]:
-        """Convert start_time string to datetime."""
-        return datetime.fromisoformat(self.start_time) if self.start_time else None
-
-    def get_end_time(self) -> Optional[datetime]:
-        """Convert end_time string to datetime."""
-        return datetime.fromisoformat(self.end_time) if self.end_time else None 
+    total_tasks: int
+    completed_tasks: int
+    failed_tasks: int
+    average_execution_time: Optional[float] = None
+    success_rate: float
+    retry_rate: float
+    common_errors: List[Dict[str, Any]] = Field(default_factory=list)
+    tool_usage: Dict[str, int] = Field(default_factory=dict)
+    performance_by_priority: Dict[int, Dict[str, Any]] = Field(default_factory=dict) 

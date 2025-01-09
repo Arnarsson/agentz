@@ -1,52 +1,42 @@
-"""
-Main FastAPI application module.
-"""
+"""Main FastAPI application."""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.agents import router as agents_router
+from app.api.tasks import router as tasks_router
+from app.api.websocket import router as websocket_router
+from app.core.config import settings
+from app.core.database import init_db
 from loguru import logger
 
-from app.core.config import settings
-from app.routers.agents import router as agents_router
-from app.routers.auth import router as auth_router
-from app.routers.health import router as health_router
+# Configure logger
+logger.add("debug.log", format="{time} {level} {message}", level="DEBUG", rotation="1 MB")
 
-# Configure logging
-logger.add(
-    "logs/agentz.log",
-    rotation="500 MB",
-    retention="10 days",
-    level=settings.LOG_LEVEL
-)
-
+# Create the FastAPI app
 app = FastAPI(
-    title=settings.APP_NAME,
+    title=settings.PROJECT_NAME,
+    version="0.1.0",
+    description=settings.DESCRIPTION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc",
 )
 
-# CORS middleware
+# Set up CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configured based on environment in production
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(auth_router, prefix=settings.API_V1_STR)
-app.include_router(agents_router, prefix=settings.API_V1_STR)
-app.include_router(health_router, prefix=settings.API_V1_STR)
+# Initialize database
+init_db()
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup."""
-    logger.info(f"Starting {settings.APP_NAME}")
-    # Initialize any required services here
+# Include routers directly
+app.include_router(agents_router, prefix=f"{settings.API_V1_STR}/agents", tags=["agents"])
+app.include_router(tasks_router, prefix=f"{settings.API_V1_STR}/tasks", tags=["tasks"])
+app.include_router(websocket_router, prefix=f"{settings.API_V1_STR}/ws", tags=["websocket"])
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info(f"Shutting down {settings.APP_NAME}")
-    # Cleanup any resources here 
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {"message": f"Welcome to {settings.PROJECT_NAME} API"} 

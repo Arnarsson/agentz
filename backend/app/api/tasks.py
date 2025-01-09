@@ -10,7 +10,9 @@ from app.schemas.task import (
     TimeRange
 )
 from app.services.task_history import TaskHistoryService
+from app.services.agent import AgentService
 from app.core.errors import AgentError
+import asyncio
 
 router = APIRouter()
 
@@ -61,10 +63,61 @@ async def list_tasks():
     return []
 
 @router.post("/{task_id}/execute")
-async def execute_task(task_id: str):
-    """Execute a specific task (to be implemented)."""
-    # TODO: Implement task execution
-    raise HTTPException(status_code=501, detail="Not implemented yet")
+async def execute_task(
+    task_id: str,
+    db: Session = Depends(get_db)
+):
+    """Execute a specific task with real-time status updates."""
+    try:
+        # Get task from database
+        task = await TaskHistoryService.get_task_history(db, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        # Get agent for the task
+        agent = await AgentService.get_agent(db, task.agent_id)
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+
+        # Check if agent is available
+        if agent.execution_status["state"] != "idle":
+            raise HTTPException(status_code=409, detail="Agent is busy")
+
+        # Update agent status to executing
+        await AgentService.update_agent_status(
+            db,
+            agent.id,
+            "active",
+            {"state": "executing", "task_id": task_id}
+        )
+
+        # Prepare task data
+        task_data = {
+            "description": task.description,
+            "expected_output": task.expected_output,
+            "context": task.context
+        }
+        
+        # Execute task in background using Celery
+        from app.tasks import execute_agent_task
+        execute_agent_task.delay(task_id, agent.id, task_data)
+
+        return {
+            "message": "Task execution started",
+            "task_id": task_id,
+            "agent_id": agent.id
+        }
+
+    except Exception as e:
+        # Update agent status to error if something goes wrong
+        if 'agent' in locals():
+            await AgentService.update_agent_status(
+                db,
+                agent.id,
+                "error",
+                {"state": "error", "error": str(e)}
+            )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{task_id}", response_model=TaskHistoryResponse)
 async def get_task_history(

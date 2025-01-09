@@ -1,3 +1,4 @@
+"""Agent API endpoints."""
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
@@ -11,7 +12,10 @@ from pydantic import BaseModel
 import uuid
 import json
 
-router = APIRouter()
+router = APIRouter(
+    tags=["agents"],
+    responses={404: {"description": "Not found"}},
+)
 
 class TaskExecution(BaseModel):
     """Schema for task execution request."""
@@ -26,7 +30,7 @@ class TaskResponse(BaseModel):
     status: str
     message: str
 
-@router.post("/", response_model=AgentResponse)
+@router.post("/", response_model=AgentResponse, status_code=201)
 async def create_agent(
     agent_data: AgentCreate,
     db: Session = Depends(get_db)
@@ -52,9 +56,9 @@ async def create_agent(
 
 @router.get("/", response_model=List[AgentResponse])
 async def list_agents(
+    db: Session = Depends(get_db),
     skip: int = 0,
-    limit: int = 100,
-    db: Session = Depends(get_db)
+    limit: int = 100
 ):
     """List all agents."""
     try:
@@ -71,9 +75,11 @@ async def get_agent(
     """Get agent by ID."""
     try:
         agent = await AgentService.get_agent(db, agent_id)
+        if not agent:
+            raise AgentNotFoundError(f"Agent with ID {agent_id} not found")
         return agent
     except AgentNotFoundError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -86,9 +92,11 @@ async def update_agent(
     """Update agent."""
     try:
         agent = await AgentService.update_agent(db, agent_id, agent_data)
+        if not agent:
+            raise AgentNotFoundError(f"Agent with ID {agent_id} not found")
         return agent
     except AgentNotFoundError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -100,9 +108,9 @@ async def delete_agent(
     """Delete agent."""
     try:
         await AgentService.delete_agent(db, agent_id)
-        return {"message": "Agent deleted successfully"}
+        return {"message": f"Agent with ID {agent_id} deleted"}
     except AgentNotFoundError as e:
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -115,98 +123,75 @@ async def execute_task(
 ):
     """Execute a task with an agent."""
     try:
-        # Get agent
         agent = await AgentService.get_agent(db, agent_id)
+        if not agent:
+            raise AgentNotFoundError(f"Agent with ID {agent_id} not found")
         
-        # Check if agent is available
-        if agent.status != "active" or (agent.execution_status and agent.execution_status.get("state") != "idle"):
-            raise AgentBusyError(
-                agent_id=agent_id,
-                current_task=agent.current_task
-            )
-        
-        # Get CrewAI agent instance
-        crew_agent = await AgentService.get_agent_instance(db, agent_id)
-        
-        # Generate task ID and update status
         task_id = str(uuid.uuid4())
-        await AgentService.update_agent_status(
-            db, 
-            agent_id, 
-            "working",
-            execution_status={
-                "state": "executing",
-                "task_id": task_id,
-                "progress": 0,
-                "message": f"Starting task: {task_data.task}"
-            }
-        )
-        
-        # Execute task in background
         background_tasks.add_task(
             AgentService.execute_task,
             db,
-            agent_id,
+            agent,
+            task_data.task,
             task_id,
-            crew_agent,
-            task_data
+            task_data.tools,
+            task_data.context
         )
         
-        return TaskResponse(
-            task_id=task_id,
-            agent_id=agent_id,
-            status="started",
-            message="Task execution started"
-        )
+        return {
+            "task_id": task_id,
+            "agent_id": agent_id,
+            "status": "started",
+            "message": f"Task execution started with ID {task_id}"
+        }
         
-    except AgentError as e:
-        # Reset agent status on error
-        if 'agent_id' in locals():
-            await AgentService.update_agent_status(
-                db, 
-                agent_id, 
-                "active",
-                execution_status={"state": "idle", "error": str(e)}
-            )
-        raise HTTPException(status_code=e.status_code, detail=str(e))
+    except AgentNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except AgentBusyError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
-        # Reset agent status on error
-        if 'agent_id' in locals():
-            await AgentService.update_agent_status(
-                db, 
-                agent_id, 
-                "active",
-                execution_status={"state": "idle", "error": str(e)}
-            )
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.websocket("/{agent_id}/ws")
-async def agent_websocket(websocket: WebSocket, agent_id: str):
-    """WebSocket endpoint for real-time agent updates."""
+async def websocket_endpoint(
+    websocket: WebSocket,
+    agent_id: str,
+    db: Session = Depends(get_db)
+):
+    """WebSocket endpoint for real-time agent communication."""
     try:
-        # Verify agent exists
-        agent = await AgentService.get_agent(agent_id)
-        if not agent:
-            await websocket.close(code=4004, reason="Agent not found")
-            return
-
         await ws_manager.connect(websocket, agent_id)
+        agent = await AgentService.get_agent(db, agent_id)
+        if not agent:
+            await ws_manager.disconnect(websocket, agent_id)
+            return
         
         try:
             while True:
-                # Handle incoming messages (e.g., pong responses)
                 data = await websocket.receive_text()
-                try:
-                    message = json.loads(data)
-                    if message.get("type") == "pong":
-                        continue  # Heartbeat response received
-                except json.JSONDecodeError:
-                    continue
+                message = json.loads(data)
+                
+                # Handle different message types
+                if message["type"] == "task":
+                    task_id = str(uuid.uuid4())
+                    await AgentService.execute_task(
+                        db,
+                        agent,
+                        message["task"],
+                        task_id,
+                        message.get("tools", []),
+                        message.get("context", {})
+                    )
+                
+                # Log agent action
+                log_agent_action(agent_id, message["type"], message)
+                
         except WebSocketDisconnect:
-            await ws_manager.disconnect(websocket)
+            await ws_manager.disconnect(websocket, agent_id)
             
     except Exception as e:
-        await websocket.close(code=4000, reason=str(e))
+        await ws_manager.disconnect(websocket, agent_id)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/ws/stats")
 async def get_websocket_stats() -> Dict[str, int]:

@@ -1,50 +1,37 @@
-"""
-Database configuration and connection management.
-"""
-from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
-from supabase import create_client, Client
-from loguru import logger
-
+"""Database configuration module."""
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
 from app.core.config import settings
+import os
+from sqlalchemy.engine import URL
 
-# SQLAlchemy setup
-SQLALCHEMY_DATABASE_URL = f"{settings.SUPABASE_URL}/rest/v1"
-engine = create_async_engine(SQLALCHEMY_DATABASE_URL, echo=settings.DEBUG)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-Base = declarative_base()
+# Create SQLite database URL
+db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dev.db")
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{db_path}"
 
-# Supabase client
-supabase: Client = create_client(
-    settings.SUPABASE_URL,
-    settings.SUPABASE_KEY
+# Create SQLAlchemy engine with SQLite dialect
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    future=True,
+    pool_pre_ping=True,
+    pool_recycle=300
 )
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Get a database session.
-    
-    Yields:
-        AsyncSession: The database session
-    """
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception as e:
-            await session.rollback()
-            logger.error(f"Database error: {str(e)}")
-            raise
-        finally:
-            await session.close()
+# Create session factory
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def get_supabase() -> Client:
-    """
-    Get the Supabase client.
-    
-    Returns:
-        Client: The Supabase client
-    """
-    return supabase 
+# Create base class for models
+Base = declarative_base()
+
+def init_db():
+    """Initialize database."""
+    Base.metadata.create_all(bind=engine)
+
+def get_db():
+    """Get database session."""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close() 

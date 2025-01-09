@@ -1,36 +1,41 @@
-from sqlalchemy import Column, String, JSON, Integer, Float, ForeignKey
+"""Task model module."""
+from sqlalchemy import Column, String, JSON, DateTime, ForeignKey, Integer, Float, Boolean
 from sqlalchemy.orm import relationship
-from .base import BaseModel
+from datetime import datetime
+from app.core.database import Base
 
-class TaskHistory(BaseModel):
-    """SQLAlchemy model for task history."""
-    __tablename__ = "task_history"
+class Task(Base):
+    """Task model."""
+    __tablename__ = "tasks"
 
-    # Core fields
     id = Column(String, primary_key=True, index=True)
-    agent_id = Column(String, ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
-    task = Column(String, nullable=False)
-    status = Column(String, nullable=False)  # executing, completed, error
-    
-    # Execution details
-    context = Column(JSON, nullable=True)
-    tools_used = Column(JSON, nullable=True)  # List of tools used during execution
+    title = Column(String)
+    description = Column(String)
+    status = Column(String, default="pending")  # pending, executing, completed, failed, cancelled, retry_scheduled
     result = Column(JSON, nullable=True)
     error = Column(JSON, nullable=True)
+    tools = Column(JSON, default=list)
+    context = Column(JSON, default=dict)
+    agent_id = Column(String, ForeignKey("agents.id"))
+    priority = Column(Integer, default=1)
+    requires_delegation = Column(Boolean, default=False)
+    execution_params = Column(JSON, default=dict)
     
-    # Analytics metrics
-    execution_time = Column(Float, nullable=True)  # in seconds
-    tokens_used = Column(Integer, nullable=True)
-    iterations = Column(Integer, nullable=True)
-    memory_usage = Column(JSON, nullable=True)  # Memory state changes
+    # Metrics and monitoring
+    start_time = Column(DateTime, nullable=True)
+    end_time = Column(DateTime, nullable=True)
+    execution_time = Column(Float, nullable=True)
+    retry_count = Column(Integer, default=0)
+    retry_config = Column(JSON, nullable=True)
+    metrics = Column(JSON, default=dict)
     
     # Timestamps
-    created_at = Column(String, nullable=False)  # ISO format
-    updated_at = Column(String, nullable=False)  # ISO format
-    completed_at = Column(String, nullable=True)  # ISO format
-    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     # Relationships
     agent = relationship("Agent", back_populates="tasks")
 
-    def __repr__(self):
-        return f"<TaskHistory {self.id} - {self.status}>" 
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"<Task {self.id}: {self.title} ({self.status})>" 

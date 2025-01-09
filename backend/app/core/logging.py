@@ -1,44 +1,34 @@
+"""Logging configuration module."""
+from typing import Dict, Any
 from loguru import logger
-from typing import Dict, Any, Optional
 from datetime import datetime
 
-def setup_logging():
-    """Configure loguru logger with structured format."""
-    logger.remove()  # Remove default handler
-    logger.add(
-        "logs/agent_{time}.log",
-        rotation="1 day",
-        retention="7 days",
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {message}",
-        serialize=True
+def log_agent_action(agent_id: str, action: str, data: Dict[str, Any]) -> None:
+    """Log agent action."""
+    logger.info(
+        f"Agent {agent_id} - {action}",
+        agent_id=agent_id,
+        action=action,
+        data=data,
+        timestamp=datetime.utcnow().isoformat()
     )
 
-def log_agent_action(
-    agent_id: str,
-    action: str,
-    details: Dict[str, Any],
-    status: str = "info",
-    error: Exception = None
-):
-    """Log agent actions in a structured format."""
-    log_data = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "agent_id": agent_id,
-        "action": action,
-        "details": details,
-        "status": status
-    }
-    
-    if error:
-        log_data["error"] = {
-            "type": type(error).__name__,
-            "message": str(error),
-            "details": getattr(error, "details", None)
-        }
-        logger.error(log_data)
-    else:
-        logger.info(log_data) 
+def log_task_action(task_id: str, action: str, data: Dict[str, Any]) -> None:
+    """Log task action."""
+    logger.info(
+        f"Task {task_id} - {action}",
+        task_id=task_id,
+        action=action,
+        data=data,
+        timestamp=datetime.utcnow().isoformat()
+    )
 
-def log_websocket_action(message: str, level: str = "info", **kwargs):
-    """Log WebSocket-related actions with structured data."""
-    logger.opt(depth=1).log(level.upper(), f"WebSocket: {message}", **kwargs) 
+def log_error(error_type: str, message: str, details: Dict[str, Any]) -> None:
+    """Log error."""
+    logger.error(
+        f"{error_type}: {message}",
+        error_type=error_type,
+        message=message,
+        details=details,
+        timestamp=datetime.utcnow().isoformat()
+    ) 

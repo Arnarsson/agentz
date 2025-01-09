@@ -1,6 +1,6 @@
 """create agents and tasks tables
 
-Revision ID: 001
+Revision ID: d4867f3a4c35
 Revises: 
 Create Date: 2024-01-08 22:00:00.000000
 
@@ -13,7 +13,7 @@ from sqlalchemy.dialects import sqlite
 
 
 # revision identifiers, used by Alembic.
-revision: str = '001'
+revision: str = 'd4867f3a4c35'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
