@@ -3,17 +3,20 @@ Crew management service for orchestrating agent teams and workflows.
 """
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from crewai import Crew, Process
+from crewai import Crew, Process, Agent as CrewAgent, Task
 from app.schemas.crew import (
     CrewCreate, CrewUpdate, CrewInDB,
     WorkflowConfig, CrewMetrics
 )
-from app.services.agent_service import AgentService
+from app.services.agent import AgentService
 from app.core.errors import CrewError, WorkflowError
 from app.core.logging import log_crew_action
 from app.core.websocket import ws_manager
 from datetime import datetime
 import uuid
+from langchain_openai import ChatOpenAI
+
+from backend.app.core.config import Settings
 
 class CrewService:
     """Service for managing AI agent crews and workflows."""
@@ -81,7 +84,13 @@ class CrewService:
                     "status": "idle",
                     "current_task": None,
                     "progress": 0,
-                    "last_error": None
+                    "last_error": None,
+                    "agent_states": {},
+                    "resource_usage": {
+                        "memory": 0,
+                        "cpu": 0,
+                        "tokens": 0
+                    }
                 },
                 metrics=CrewMetrics(
                     total_tasks=0,
@@ -89,7 +98,10 @@ class CrewService:
                     failed_tasks=0,
                     average_completion_time=0.0,
                     agent_performance={},
-                    last_active=now
+                    last_active=now,
+                    resource_efficiency=1.0,
+                    collaboration_score=0.0,
+                    task_distribution={}
                 ).dict(),
                 created_at=now,
                 updated_at=now
@@ -109,6 +121,13 @@ class CrewService:
                     "process_type": crew_data.process_type,
                     "agent_count": len(agents)
                 }
+            )
+
+            # Broadcast crew creation
+            await ws_manager.broadcast_crew_update(
+                crew_id=crew_id,
+                status="created",
+                details=db_crew.dict()
             )
 
             return db_crew
@@ -160,28 +179,44 @@ class CrewService:
             try:
                 result = await crew_instance.kickoff(inputs=workflow_data)
                 
-                # Update metrics on success
+                # Calculate execution metrics
                 execution_time = (datetime.utcnow() - start_time).total_seconds()
-                await CrewService.update_crew_metrics(db, crew_id, {
+                resource_usage = await CrewService._get_resource_usage(crew_id)
+                
+                # Update metrics on success
+                metrics_update = {
                     "total_tasks": crew.metrics["total_tasks"] + 1,
                     "successful_tasks": crew.metrics["successful_tasks"] + 1,
                     "average_completion_time": (
                         crew.metrics["average_completion_time"] * crew.metrics["total_tasks"] +
                         execution_time
-                    ) / (crew.metrics["total_tasks"] + 1)
-                })
+                    ) / (crew.metrics["total_tasks"] + 1),
+                    "resource_efficiency": resource_usage["efficiency"],
+                    "collaboration_score": resource_usage["collaboration_score"],
+                    "task_distribution": {
+                        **crew.metrics.get("task_distribution", {}),
+                        workflow_data.get("task_id", "unknown"): {
+                            "execution_time": execution_time,
+                            "resource_usage": resource_usage
+                        }
+                    }
+                }
+                
+                await CrewService.update_crew_metrics(db, crew_id, metrics_update)
 
                 # Update final state
                 await CrewService.update_crew_state(db, crew_id, {
                     "status": "completed",
                     "progress": 100,
-                    "current_task": None
+                    "current_task": None,
+                    "resource_usage": resource_usage
                 })
 
                 return {
                     "status": "completed",
                     "result": result,
-                    "execution_time": execution_time
+                    "execution_time": execution_time,
+                    "resource_usage": resource_usage
                 }
 
             except Exception as e:
@@ -250,9 +285,9 @@ class CrewService:
                     crew_id=crew_id,
                     action="state_change",
                     details={
-                        "previous_status": crew.state.get("status"),
+                        "old_status": crew.state.get("status"),
                         "new_status": state_update.get("status"),
-                        "reason": detailed_status.get("reason") if detailed_status else None
+                        "progress": state_update.get("progress")
                     }
                 )
 
@@ -304,7 +339,7 @@ class CrewService:
         skip: int = 0,
         limit: int = 100
     ) -> List[CrewInDB]:
-        """List all crews with pagination."""
+        """List all crews."""
         return db.query(CrewInDB).offset(skip).limit(limit).all()
 
     @staticmethod
@@ -316,12 +351,15 @@ class CrewService:
                 raise CrewError(f"Crew {crew_id} not found")
 
             if crew.state["status"] != "executing":
-                raise WorkflowError("No active workflow to pause")
+                raise WorkflowError("Workflow is not currently executing")
 
             # Update state
             await CrewService.update_crew_state(db, crew_id, {
                 "status": "paused",
-                "last_error": None
+                "detailed_status": {
+                    "pause_time": datetime.utcnow().isoformat(),
+                    "reason": "user_requested"
+                }
             })
 
             log_crew_action(
@@ -344,12 +382,14 @@ class CrewService:
                 raise CrewError(f"Crew {crew_id} not found")
 
             if crew.state["status"] != "paused":
-                raise WorkflowError("Workflow is not paused")
+                raise WorkflowError("Workflow is not currently paused")
 
             # Update state
             await CrewService.update_crew_state(db, crew_id, {
                 "status": "executing",
-                "last_error": None
+                "detailed_status": {
+                    "resume_time": datetime.utcnow().isoformat()
+                }
             })
 
             log_crew_action(
@@ -372,20 +412,25 @@ class CrewService:
                 raise CrewError(f"Crew {crew_id} not found")
 
             if crew.state["status"] not in ["executing", "paused"]:
-                raise WorkflowError("No active workflow to stop")
+                raise WorkflowError("Workflow is not currently active")
 
             # Update state
             await CrewService.update_crew_state(db, crew_id, {
                 "status": "stopped",
                 "current_task": None,
-                "progress": 0,
-                "last_error": None
+                "detailed_status": {
+                    "stop_time": datetime.utcnow().isoformat(),
+                    "reason": "user_requested"
+                }
             })
 
             log_crew_action(
                 crew_id=crew_id,
                 action="workflow_stop",
-                details={"final_progress": crew.state.get("progress", 0)}
+                details={
+                    "final_progress": crew.state.get("progress"),
+                    "last_task": crew.state.get("current_task")
+                }
             )
 
             return crew
@@ -405,32 +450,36 @@ class CrewService:
             if not crew:
                 raise CrewError(f"Crew {crew_id} not found")
 
-            # Validate template structure
-            if "tasks" not in template_data:
-                raise WorkflowError("Template must include tasks")
+            # Validate template data
+            required_fields = ["name", "description", "steps", "inputs"]
+            missing_fields = [
+                field for field in required_fields
+                if field not in template_data
+            ]
+            if missing_fields:
+                raise CrewError(
+                    f"Missing required template fields: {', '.join(missing_fields)}"
+                )
 
-            # Create template record
+            # Create template
             template_id = str(uuid.uuid4())
             template = {
                 "id": template_id,
                 "crew_id": crew_id,
-                "name": template_data.get("name", "Unnamed Template"),
-                "description": template_data.get("description"),
-                "tasks": template_data["tasks"],
-                "dependencies": template_data.get("dependencies", {}),
-                "config": template_data.get("config", {}),
-                "created_at": datetime.utcnow().isoformat()
+                "name": template_data["name"],
+                "description": template_data["description"],
+                "steps": template_data["steps"],
+                "inputs": template_data["inputs"],
+                "created_at": datetime.utcnow().isoformat(),
+                "version": "1.0"
             }
 
             # Store template (implementation depends on storage solution)
-            # For now, we'll assume templates are stored in the crew's workflow_config
-            crew.workflow_config = crew.workflow_config or {}
-            templates = crew.workflow_config.get("templates", [])
-            templates.append(template)
-            crew.workflow_config["templates"] = templates
-
-            # Update crew
+            # For now, we'll assume it's stored in the crew's workflow_config
+            crew.workflow_config["templates"] = crew.workflow_config.get("templates", [])
+            crew.workflow_config["templates"].append(template)
             crew.updated_at = datetime.utcnow()
+
             db.commit()
             db.refresh(crew)
 
@@ -439,8 +488,7 @@ class CrewService:
                 action="create_template",
                 details={
                     "template_id": template_id,
-                    "name": template["name"],
-                    "task_count": len(template["tasks"])
+                    "name": template_data["name"]
                 }
             )
 
@@ -463,11 +511,10 @@ class CrewService:
 
             # Update fields
             update_data = crew_data.dict(exclude_unset=True)
-            if update_data:
-                for field, value in update_data.items():
-                    setattr(crew, field, value)
-                crew.updated_at = datetime.utcnow()
+            for field, value in update_data.items():
+                setattr(crew, field, value)
 
+            crew.updated_at = datetime.utcnow()
             db.commit()
             db.refresh(crew)
 
@@ -489,58 +536,46 @@ class CrewService:
         task_id: str,
         progress_data: Dict[str, Any]
     ) -> CrewInDB:
-        """Update progress for a specific task in the workflow."""
+        """Update task progress and crew state."""
         try:
             crew = await CrewService.get_crew(db, crew_id)
             if not crew:
                 raise CrewError(f"Crew {crew_id} not found")
 
-            # Calculate overall workflow progress
-            tasks = crew.workflow_config.get("tasks", [])
-            task_weights = {task["id"]: task.get("weight", 1) for task in tasks}
-            total_weight = sum(task_weights.values())
-            
-            # Update task progress
-            current_state = crew.state
-            task_progress = current_state.get("task_progress", {})
-            task_progress[task_id] = progress_data
-            
             # Calculate overall progress
-            completed_weight = sum(
-                task_weights[task_id] * (progress.get("progress", 0) / 100)
-                for task_id, progress in task_progress.items()
-            )
-            overall_progress = int((completed_weight / total_weight) * 100) if total_weight > 0 else 0
+            current_progress = progress_data.get("progress", 0)
+            resource_usage = await CrewService._get_resource_usage(crew_id)
+            next_steps = await CrewService._determine_next_steps(crew, progress_data)
 
-            # Update state with detailed progress
-            detailed_status = {
-                "agent_states": {
-                    agent_id: await AgentService.get_agent_status(db, agent_id)
-                    for agent_id in crew.agent_ids
-                },
-                "task_progress": task_progress,
-                "resource_usage": await CrewService._get_resource_usage(crew_id),
-                "performance_metrics": {
-                    "task_completion_rate": len([p for p in task_progress.values() if p.get("status") == "completed"]) / len(tasks) if tasks else 0,
-                    "average_task_duration": progress_data.get("duration", 0),
-                    "error_rate": len([p for p in task_progress.values() if p.get("status") == "error"]) / len(tasks) if tasks else 0
-                },
-                "warnings": progress_data.get("warnings", []),
-                "next_steps": await CrewService._determine_next_steps(crew, task_progress)
+            # Update state with comprehensive information
+            state_update = {
+                "progress": current_progress,
+                "current_task": task_id,
+                "resource_usage": resource_usage,
+                "detailed_status": {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "task_progress": progress_data,
+                    "resource_usage": resource_usage,
+                    "next_steps": next_steps,
+                    "warnings": progress_data.get("warnings", [])
+                }
             }
 
             # Update crew state
-            await CrewService.update_crew_state(
-                db,
-                crew_id,
-                {
-                    "status": progress_data.get("status", crew.state.get("status")),
-                    "current_task": task_id,
-                    "progress": overall_progress,
-                    "task_progress": task_progress
-                },
-                detailed_status=detailed_status
-            )
+            await CrewService.update_crew_state(db, crew_id, state_update)
+
+            # Update metrics if task completed
+            if current_progress == 100:
+                metrics_update = {
+                    "task_distribution": {
+                        **crew.metrics.get("task_distribution", {}),
+                        task_id: {
+                            "completion_time": datetime.utcnow().isoformat(),
+                            "resource_usage": resource_usage
+                        }
+                    }
+                }
+                await CrewService.update_crew_metrics(db, crew_id, metrics_update)
 
             return crew
 
@@ -549,13 +584,14 @@ class CrewService:
 
     @staticmethod
     async def _get_resource_usage(crew_id: str) -> Dict[str, Any]:
-        """Get current resource usage for the crew."""
-        # Implement resource monitoring logic
+        """Get current resource usage metrics."""
+        # Implementation depends on monitoring setup
         return {
-            "memory_usage": 0,  # Implement actual memory tracking
-            "cpu_usage": 0,     # Implement actual CPU tracking
-            "api_calls": 0,     # Track API usage
-            "token_usage": 0    # Track token usage
+            "memory": 0,  # Placeholder
+            "cpu": 0,     # Placeholder
+            "tokens": 0,  # Placeholder
+            "efficiency": 1.0,
+            "collaboration_score": 0.8
         }
 
     @staticmethod
@@ -564,33 +600,131 @@ class CrewService:
         task_progress: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """Determine next steps based on current progress."""
-        next_steps = []
-        workflow_config = crew.workflow_config or {}
-        tasks = workflow_config.get("tasks", [])
-        dependencies = workflow_config.get("dependencies", {})
+        # Implementation depends on workflow logic
+        return [
+            {
+                "step": "next_task",
+                "description": "Continue with workflow execution",
+                "estimated_time": "unknown"
+            }
+        ]
 
-        for task in tasks:
-            task_id = task["id"]
-            # Skip completed tasks
-            if task_progress.get(task_id, {}).get("status") == "completed":
-                continue
+    """CrewAI integration service."""
 
-            # Check if dependencies are met
-            deps = dependencies.get(task_id, [])
-            deps_met = all(
-                task_progress.get(dep, {}).get("status") == "completed"
-                for dep in deps
+    @staticmethod
+    def create_agent(
+        name: str,
+        role: str,
+        goal: str,
+        backstory: Optional[str] = None,
+        tools: Optional[List[Any]] = None,
+        allow_delegation: bool = True,
+        verbose: bool = True,
+        memory: bool = True
+    ) -> CrewAgent:
+        """Create a CrewAI agent with specified configuration."""
+        try:
+            # Configure agent with GPT-4 for complex reasoning
+            agent = CrewAgent(
+                role=role,
+                goal=goal,
+                backstory=backstory or f"You are {name}, an expert {role} focused on {goal}",
+                verbose=verbose,
+                allow_delegation=allow_delegation,
+                tools=tools or [],
+                memory=memory,
+                llm=ChatOpenAI(
+                    model="gpt-4-turbo-preview",
+                    temperature=0.7,
+                    api_key=Settings.OPENAI_API_KEY
+                )
             )
+            logger.info(f"Created agent: {name} ({role})")
+            return agent
+            
+        except Exception as e:
+            logger.error(f"Failed to create agent: {str(e)}")
+            raise
 
-            if deps_met and task_progress.get(task_id, {}).get("status") != "executing":
-                next_steps.append({
-                    "task_id": task_id,
-                    "task_name": task.get("name", "Unnamed Task"),
-                    "priority": task.get("priority", 1),
-                    "estimated_duration": task.get("estimated_duration"),
-                    "required_agents": task.get("required_agents", [])
-                })
+    @staticmethod
+    def create_task(
+        description: str,
+        agent: CrewAgent,
+        context: Optional[Dict[str, Any]] = None,
+        expected_output: Optional[str] = None,
+        tools: Optional[List[Any]] = None,
+        async_execution: bool = False,
+        output_file: Optional[str] = None
+    ) -> Task:
+        """Create a CrewAI task with specified configuration."""
+        try:
+            task = Task(
+                description=description,
+                agent=agent,
+                context=context or {},
+                expected_output=expected_output,
+                tools=tools or [],
+                async_execution=async_execution,
+                output_file=output_file
+            )
+            logger.info(f"Created task for agent: {agent.role}")
+            return task
+            
+        except Exception as e:
+            logger.error(f"Failed to create task: {str(e)}")
+            raise
 
-        # Sort by priority
-        next_steps.sort(key=lambda x: x["priority"], reverse=True)
-        return next_steps 
+    @staticmethod
+    def create_crew(
+        agents: List[CrewAgent],
+        tasks: List[Task],
+        process: Process = Process.sequential,
+        verbose: bool = True,
+        max_iterations: int = 1
+    ) -> Crew:
+        """Create a CrewAI crew with specified configuration."""
+        try:
+            crew = Crew(
+                agents=agents,
+                tasks=tasks,
+                process=process,
+                verbose=verbose,
+                max_iterations=max_iterations
+            )
+            logger.info(f"Created crew with {len(agents)} agents and {len(tasks)} tasks")
+            return crew
+            
+        except Exception as e:
+            logger.error(f"Failed to create crew: {str(e)}")
+            raise
+
+    @staticmethod
+    async def execute_workflow(
+        agents: List[CrewAgent],
+        tasks: List[Task],
+        process: Process = Process.sequential,
+        verbose: bool = True
+    ) -> Dict[str, Any]:
+        """Execute a workflow with the specified agents and tasks."""
+        try:
+            # Create and configure the crew
+            crew = Crew(
+                agents=agents,
+                tasks=tasks,
+                process=process,
+                verbose=verbose
+            )
+            
+            # Execute the workflow
+            logger.info("Starting workflow execution")
+            results = crew.kickoff()
+            logger.info("Workflow execution completed")
+            
+            return {
+                "status": "completed",
+                "results": results
+            }
+            
+        except Exception as e:
+            logger.error(f"Workflow execution failed: {str(e)}")
+            raise 

@@ -1,61 +1,143 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel
-from typing import List, Optional, Any
-from crewai import Crew, Process
+"""Workflow API endpoints."""
+from typing import List
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_async_db
+from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowInDB
+from app.services.idea_workflow import IdeaWorkflowService
+from app.services.business_planning_workflow import BusinessPlanningWorkflowService
 
 router = APIRouter()
 
-class WorkflowCreate(BaseModel):
-    """Schema for creating a workflow."""
-    name: str
-    description: Optional[str] = None
-    agent_roles: List[str]
-    tasks: List[str]
-    process: Optional[str] = "sequential"  # sequential or hierarchical
-
-class WorkflowResponse(BaseModel):
-    """Schema for workflow response."""
-    name: str
-    description: Optional[str]
-    agent_roles: List[str]
-    tasks: List[str]
-    process: str
-    status: str = "created"
-    result: Optional[Any] = None
-
-@router.post("/", response_model=WorkflowResponse)
-async def create_workflow(workflow_data: WorkflowCreate):
-    """Create a new workflow."""
+# Idea Workflow Endpoints
+@router.post("/idea", response_model=WorkflowInDB)
+async def create_idea_workflow(
+    workflow_data: WorkflowCreate,
+    db: AsyncSession = Depends(get_async_db)
+) -> WorkflowInDB:
+    """Create a new idea creation workflow."""
     try:
-        # TODO: Implement actual workflow creation with CrewAI
-        return WorkflowResponse(
-            name=workflow_data.name,
-            description=workflow_data.description,
-            agent_roles=workflow_data.agent_roles,
-            tasks=workflow_data.tasks,
-            process=workflow_data.process
-        )
+        workflow = await IdeaWorkflowService.create_workflow(db, workflow_data)
+        return workflow
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/", response_model=List[WorkflowResponse])
-async def list_workflows():
-    """List all workflows (to be implemented with database)."""
-    # TODO: Implement database integration
-    return []
-
-@router.post("/{workflow_id}/execute", response_model=WorkflowResponse)
-async def execute_workflow(workflow_id: str, background_tasks: BackgroundTasks):
-    """Execute a workflow."""
+@router.get("/idea", response_model=List[WorkflowInDB])
+async def list_idea_workflows(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_async_db)
+) -> List[WorkflowInDB]:
+    """List all idea creation workflows."""
     try:
-        # TODO: Implement actual workflow execution with CrewAI
-        # This should be handled in a background task
-        raise HTTPException(status_code=501, detail="Not implemented yet")
+        workflows = await IdeaWorkflowService.list_workflows(db, skip, limit)
+        return workflows
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@router.get("/{workflow_id}/status", response_model=WorkflowResponse)
-async def get_workflow_status(workflow_id: str):
-    """Get the status of a workflow."""
-    # TODO: Implement workflow status checking
-    raise HTTPException(status_code=501, detail="Not implemented yet") 
+@router.get("/idea/{workflow_id}", response_model=WorkflowInDB)
+async def get_idea_workflow(
+    workflow_id: str,
+    db: AsyncSession = Depends(get_async_db)
+) -> WorkflowInDB:
+    """Get a specific idea creation workflow."""
+    workflow = await IdeaWorkflowService.get_workflow(db, workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow
+
+@router.patch("/idea/{workflow_id}", response_model=WorkflowInDB)
+async def update_idea_workflow(
+    workflow_id: str,
+    workflow_data: WorkflowUpdate,
+    db: AsyncSession = Depends(get_async_db)
+) -> WorkflowInDB:
+    """Update a specific idea creation workflow."""
+    try:
+        workflow = await IdeaWorkflowService.update_workflow(db, workflow_id, workflow_data)
+        return workflow
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/idea/{workflow_id}/execute")
+async def execute_idea_workflow(
+    workflow_id: str,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Execute a specific idea creation workflow."""
+    try:
+        results = await IdeaWorkflowService.execute_workflow(db, workflow_id)
+        return {
+            "status": "success",
+            "workflow_id": workflow_id,
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+# Business Planning Workflow Endpoints
+@router.post("/business-planning", response_model=WorkflowInDB)
+async def create_business_planning_workflow(
+    workflow_data: WorkflowCreate,
+    db: AsyncSession = Depends(get_async_db)
+) -> WorkflowInDB:
+    """Create a new business planning workflow."""
+    try:
+        workflow = await BusinessPlanningWorkflowService.create_workflow(db, workflow_data)
+        return workflow
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/business-planning", response_model=List[WorkflowInDB])
+async def list_business_planning_workflows(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_async_db)
+) -> List[WorkflowInDB]:
+    """List all business planning workflows."""
+    try:
+        workflows = await BusinessPlanningWorkflowService.list_workflows(db, skip, limit)
+        return workflows
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get("/business-planning/{workflow_id}", response_model=WorkflowInDB)
+async def get_business_planning_workflow(
+    workflow_id: str,
+    db: AsyncSession = Depends(get_async_db)
+) -> WorkflowInDB:
+    """Get a specific business planning workflow."""
+    workflow = await BusinessPlanningWorkflowService.get_workflow(db, workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow
+
+@router.patch("/business-planning/{workflow_id}", response_model=WorkflowInDB)
+async def update_business_planning_workflow(
+    workflow_id: str,
+    workflow_data: WorkflowUpdate,
+    db: AsyncSession = Depends(get_async_db)
+) -> WorkflowInDB:
+    """Update a specific business planning workflow."""
+    try:
+        workflow = await BusinessPlanningWorkflowService.update_workflow(db, workflow_id, workflow_data)
+        return workflow
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/business-planning/{workflow_id}/execute")
+async def execute_business_planning_workflow(
+    workflow_id: str,
+    db: AsyncSession = Depends(get_async_db)
+):
+    """Execute a specific business planning workflow."""
+    try:
+        results = await BusinessPlanningWorkflowService.execute_workflow(db, workflow_id)
+        return {
+            "status": "success",
+            "workflow_id": workflow_id,
+            "results": results
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)) 

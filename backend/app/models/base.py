@@ -1,4 +1,5 @@
 """Base model for SQLAlchemy models."""
-from sqlalchemy.ext.declarative import declarative_base
+from app.core.database import Base
 
-Base = declarative_base() 
+# Re-export Base for models to use
+__all__ = ['Base'] 
