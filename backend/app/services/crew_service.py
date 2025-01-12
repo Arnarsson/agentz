@@ -15,6 +15,7 @@ from app.core.websocket import ws_manager
 from datetime import datetime
 import uuid
 from langchain_openai import ChatOpenAI
+from loguru import logger
 
 from backend.app.core.config import Settings
 

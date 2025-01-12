@@ -1,4 +1,5 @@
 """Test configuration module."""
+import os
 from app.core.config import settings
 
 TEST_DATABASE_URL = "sqlite:///./data/test.db"
