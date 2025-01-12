@@ -1,6 +1,12 @@
+"""Database utilities for testing."""
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import AsyncSessionLocal
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Get database session."""
-    raise NotImplementedError("This is a placeholder that should be overridden in tests") 
+async def get_test_async_db() -> AsyncGenerator[AsyncSession, None]:
+    """Get async database session for testing."""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close() 

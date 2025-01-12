@@ -19,7 +19,7 @@ os.environ["SUPABASE_URL"] = "http://localhost:54321"
 os.environ["SUPABASE_KEY"] = "test_key"
 os.environ["SUPABASE_JWT_SECRET"] = "test_jwt_secret"
 os.environ["SUPABASE_DB_PASSWORD"] = "test_password"
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://postgres:postgres@localhost:5432/test_db"
+os.environ["DATABASE_URL"] = "sqlite:///./data/test.db"
 
 # AI/ML
 os.environ["OPENAI_API_KEY"] = "test_openai_key"

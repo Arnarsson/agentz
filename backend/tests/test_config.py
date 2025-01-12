@@ -1,8 +1,7 @@
-"""Test configuration."""
-import os
+"""Test configuration module."""
+from app.core.config import settings
 
-# Test database configuration
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/test_db"
+TEST_DATABASE_URL = "sqlite:///./data/test.db"
 
 # Set environment variables for testing
 os.environ["APP_NAME"] = "AgentZ"

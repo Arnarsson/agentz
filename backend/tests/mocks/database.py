@@ -1,49 +1,30 @@
-"""Database test utilities."""
-from typing import AsyncGenerator
-import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
+"""Mock database module for testing."""
+from app.core.database import create_engine, sessionmaker, Base
+from app.core.config import settings
 
-from app.core.database import Base
+# Override database URL for testing
+settings.DATABASE_URL = "sqlite:///./data/test.db"
 
-# Use PostgreSQL for testing
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/test_db"
-
-# Create a global engine for reuse
-engine = create_async_engine(
-    TEST_DATABASE_URL,
-    poolclass=NullPool,  # Disable connection pooling for tests
-    echo=True
+# Create test engine using the same configuration as production
+engine = create_engine(
+    settings.DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    future=True,
+    pool_pre_ping=True,
+    pool_recycle=300
 )
 
-@pytest.fixture
-async def test_db() -> AsyncGenerator[AsyncSession, None]:
-    """Create a test database session."""
-    # Create all tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+# Create test session factory
+TestSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-    # Create a session factory
-    async_session = sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autocommit=False,
-        autoflush=False
-    )
+def init_test_db():
+    """Initialize test database."""
+    Base.metadata.create_all(bind=engine)
 
-    async with async_session() as session:
-        try:
-            yield session
-        finally:
-            # Ensure we rollback any changes
-            await session.rollback()
-            # Drop all tables after the test
-            async with engine.begin() as conn:
-                await conn.run_sync(Base.metadata.drop_all)
-            await session.close()
-
-    # Clean up the engine at the end of all tests
-    await engine.dispose() 
+def get_test_db():
+    """Get test database session."""
+    db = TestSessionLocal()
+    try:
+        yield db
+    finally:
+        db.close() 
