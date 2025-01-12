@@ -4,15 +4,23 @@
   "description": "AgentZ is a powerful platform for managing and orchestrating AI agents built with CrewAI. It provides a robust backend API and real-time communication capabilities for managing agent tasks, monitoring execution progress, and handling agent-to-agent communication.",
   "scripts": {
     "dev": "next dev",
+    "dev:monitored": "node scripts/monitor.js",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@chakra-ui/icons": "^2.1.1",
+    "@chakra-ui/next-js": "^2.2.0",
+    "@chakra-ui/react": "^2.8.2",
     "@clerk/nextjs": "^6.9.7",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "framer-motion": "^11.16.4",
     "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "react-icons": "^5.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",
